@@ -35,6 +35,8 @@
     "@vueuse/core": "^9.13.0",
     "@vueuse/integrations": "^10.2.0",
     "@vueuse/motion": "^2.0.0",
+    "@webav/av-canvas": "^1.0.2",
+    "@webav/av-cliper": "^1.0.2",
     "add": "^2.0.6",
     "clientjs": "^0.2.1",
     "date-fns": "^2.30.0",
