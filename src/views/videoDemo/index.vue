@@ -1,7 +1,15 @@
 <script lang="ts" setup>
 import { onBeforeMount, onMounted, ref } from 'vue'
 import type { UploadFileInfo } from 'naive-ui'
-import { MP4Clip, VisibleSprite } from '@webav/av-cliper'
+import type { IClip } from '@webav/av-cliper'
+import {
+  AudioClip,
+  EmbedSubtitlesClip,
+  ImgClip,
+  MP4Clip,
+  VisibleSprite,
+  renderTxt2ImgBitmap,
+} from '@webav/av-cliper'
 import { AVCanvas } from '@webav/av-canvas'
 
 const videoList: any = ref([])
@@ -63,32 +71,60 @@ const addSprite2Track = (trackId: string, sprite: VisibleSprite, name = '') => {
 
 const preDuration = ref<number>(0)
 
-const spriteList = ref<Array<VisibleSprite>>([])
+const spriteList: VisibleSprite[] = []
 
-const handleChange = async (options: {
-  file: UploadFileInfo
-  fileList: Array<UploadFileInfo>
-  event?: Event
-}): Promise<void> => {
-  const { file, fileList } = options
-
+const handleFileRead = async (file: File, type: string) => {
   const reader = new FileReader()
 
   reader.onload = async (e) => {
     try {
-      const arrayBuffer = e.target?.result as ArrayBuffer
-      if (arrayBuffer) {
+      const result: any = e.target?.result
+      if (result) {
         // 创建一个新的 MP4Clip 实例，利用数组缓冲区转换为可流式读取
-        const clip = new MP4Clip(arrayBufferToStream(arrayBuffer))
+        let clip: MP4Clip | AudioClip | ImgClip | IClip | EmbedSubtitlesClip
+        if (type === 'video') {
+          clip = new MP4Clip(arrayBufferToStream(result))
+        }
+        else if (type === 'audio') {
+          clip = new AudioClip(arrayBufferToStream(result))
+        }
+        else if (type === 'img') {
+          clip = new ImgClip(arrayBufferToStream(result))
+        }
+        else if (type === 'srt') {
+          clip = new EmbedSubtitlesClip(result, {
+            videoWidth: 1280,
+            videoHeight: 720,
+            fontSize: 44,
+            fontFamily: 'Noto Sans SC',
+            strokeStyle: '#000',
+            lineWidth: 20,
+            lineJoin: 'round',
+            lineCap: 'round',
+            textShadow: {
+              offsetX: 2,
+              offsetY: 2,
+              blur: 4,
+              color: 'rgba(0,0,0,0.25)',
+            },
+          })
+        }
+
         // 创建一个可见精灵实例，使用刚才创建的 MP4Clip
         const sprite = new VisibleSprite(clip)
-        // 设置精灵的开始时间
-        sprite.time.offset = preDuration.value
-        spriteList.value.push(sprite)
+        if (type === 'video') {
+          // 设置精灵的开始时间
+          sprite.time.offset = preDuration.value
+          spriteList.push(sprite)
+        }
+
         // 将精灵添加到可视化画布中
         await avCanvas?.addSprite(sprite)
-        // 记录精灵的持续时间, 拼接视频
-        preDuration.value += sprite.time.duration
+        if (type === 'video') {
+          // 记录精灵的持续时间, 拼接视频
+          preDuration.value += sprite.time.duration
+        }
+
         // addSprite2Track('1-video', sprite, 'video')
       }
       else {
@@ -100,13 +136,64 @@ const handleChange = async (options: {
     }
   }
 
-  reader.readAsArrayBuffer(file.file)
+  if (type === 'srt')
+    reader.readAsText(file)
+  else reader.readAsArrayBuffer(file)
+}
+
+const handleVideoChange = async (options: {
+  file: UploadFileInfo
+  fileList: Array<UploadFileInfo>
+  event?: Event
+}): Promise<void> => {
+  const { file, fileList } = options
+
+  await handleFileRead(file.file, 'video')
 
   videoList.value = fileList.map((item: UploadFileInfo) => ({
     name: item.name,
     file: item.file,
     url: item.file ? URL.createObjectURL(item.file) : '',
   }))
+}
+
+const handleAudioChange = async (options: {
+  file: UploadFileInfo
+  fileList: Array<UploadFileInfo>
+  event?: Event
+}): Promise<void> => {
+  const { file, fileList } = options
+
+  handleFileRead(file.file, 'audio')
+}
+
+const handleImgChange = async (options: {
+  file: UploadFileInfo
+  fileList: Array<UploadFileInfo>
+  event?: Event
+}): Promise<void> => {
+  const { file, fileList } = options
+
+  handleFileRead(file.file, 'img')
+}
+
+const handleAddText = async () => {
+  const sprite = new VisibleSprite(
+    new ImgClip(
+      await renderTxt2ImgBitmap('混剪', 'font-size: 80px; color: red;'),
+    ),
+  )
+  await avCanvas?.addSprite(sprite)
+}
+
+const handleSrtChange = async (options: {
+  file: UploadFileInfo
+  fileList: Array<UploadFileInfo>
+  event?: Event
+}): Promise<void> => {
+  const { file, fileList } = options
+
+  handleFileRead(file.file, 'srt')
 }
 
 const playing = ref<boolean>(false)
@@ -157,23 +244,66 @@ onMounted(() => {
 onBeforeMount(() => {
   avCanvas?.destroy()
 })
+
+const test = ref([0, 10])
 </script>
 
 <template>
   <div class="flex h-full">
     <div class="w-1/3 flex flex-col">
-      <n-upload
-        class="m-4"
-        action=""
-        :default-upload="false"
-        :headers="{}"
-        :data="{}"
-        :show-file-list="false"
-        :on-change="handleChange"
-        accept=".mp4"
-      >
-        <n-button>上传文件</n-button>
-      </n-upload>
+      <div class="m-4 flex">
+        <n-upload
+          action=""
+          :default-upload="false"
+          :headers="{}"
+          :data="{}"
+          :show-file-list="false"
+          :on-change="handleVideoChange"
+          accept=".mp4,.mov'"
+        >
+          <n-button>上传视频</n-button>
+        </n-upload>
+
+        <n-upload
+          action=""
+          :default-upload="false"
+          :headers="{}"
+          :data="{}"
+          :show-file-list="false"
+          :on-change="handleAudioChange"
+          accept=".m4a,.mp3"
+        >
+          <n-button>上传音频</n-button>
+        </n-upload>
+
+        <n-upload
+          action=""
+          :default-upload="false"
+          :headers="{}"
+          :data="{}"
+          :show-file-list="false"
+          :on-change="handleImgChange"
+          accept=".png,.jpg,.jpeg,.gif"
+        >
+          <n-button>上传图片</n-button>
+        </n-upload>
+
+        <n-upload
+          action=""
+          :default-upload="false"
+          :headers="{}"
+          :data="{}"
+          :show-file-list="false"
+          :on-change="handleSrtChange"
+          accept=".srt"
+        >
+          <n-button>上传字幕</n-button>
+        </n-upload>
+
+        <n-button @click="handleAddText">
+          添加文字
+        </n-button>
+      </div>
 
       <div class="overflow-x-auto flex-1">
         <div
@@ -203,7 +333,7 @@ onBeforeMount(() => {
     </div>
 
     <div class="flex-1">
-      <div class="h-2/3 m-4">
+      <div ref="canvasWrapper" class="h-2/3 m-4">
         <div ref="avCanvasRef" />
       </div>
       <div class="h-1/3">
